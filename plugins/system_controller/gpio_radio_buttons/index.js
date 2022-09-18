@@ -23,13 +23,14 @@ gpioRadioButtons.prototype.onVolumioStart = function () {
 
     var configFile = self.commandRouter.pluginManager.getConfigurationFile(self.context, 'config.json');
     self.logger.info("GPIO Radio Buttons: config file: " + configFile);
-    
+
     self.config = new (require('v-conf'))();
     self.config.loadFile(configFile);
 
     self.logger.info("GPIO Radio Buttons: initialized");
-    
-    return libQ.resolve();	
+    self.logger.info("DEBUG: onvolumiostart");
+
+    return libQ.resolve();
 };
 
 gpioRadioButtons.prototype.getConfigurationFiles = function()
@@ -43,10 +44,13 @@ gpioRadioButtons.prototype.onStart = function() {
 
     self.gpioPins = self.config.get("gpioPins");
     self.logger.info("GPIO Radio Buttons: Using gpio pins from config file: [" + self.gpioPins + "]");
-    
+    self.logger.info("DEBUG: onStart");
+
     self.createTriggers()
         .then (function (result) {
             self.logger.info("GPIO Radio Buttons: Triggers installed");
+            self.logger.info("GPIO Radio Buttons: Triggers installed DEBUG");
+            self.logger.info("DEBUG: onstart");
             defer.resolve();
         });
 
@@ -62,7 +66,7 @@ gpioRadioButtons.prototype.onStop = function() {
             self.logger.info("GPIO Radio Buttons: Triggers stopped");
             defer.resolve();
         });
-    
+
     return defer.promise;
 };
 
@@ -81,20 +85,20 @@ gpioRadioButtons.prototype.getUIConfig = function () {
         // Set up option arrays
         var pinOptions = [];
         self.gpioPins.forEach(function(item){
-            pinOptions.push({"value": item, "label": item.toString() });			
+            pinOptions.push({"value": item, "label": item.toString() });
         })
 
         var stationOptions = [];
         data.navigation.lists[0].items.forEach(function(item, index, array){
             stationOptions.push({"value": { stationName: item.title, stationUri: item.uri }, "label": item.title});
         });
-            
+
         self.logger.info('GPIO Radio Buttons: Getting UI config');
 
         var lang_code = 'en'; // self.commandRouter.sharedVars.get('language_code');
-        
-        self.commandRouter.i18nJson(__dirname + '/i18n/strings_' + lang_code + '.json', 
-                                    __dirname + '/i18n/strings_en.json', 
+
+        self.commandRouter.i18nJson(__dirname + '/i18n/strings_' + lang_code + '.json',
+                                    __dirname + '/i18n/strings_en.json',
                                     __dirname + '/UIConfig.json')
         .then(function(uiconf)
         {
@@ -112,12 +116,12 @@ gpioRadioButtons.prototype.getUIConfig = function () {
                          "label": "Configuration needed!",
                          "doc": "The GPIO Radio Buttons plugin works with radio stations in the 'Favourite Radios' section and there don't appear to be any. Please add one or more radio stations to 'Favourite Radios' and try again."
                        });
-            
+
             } else {
-            
+
                 for (var index = 1; index <= buttonCount; index++) {
 
-                    var button      = "button" + index.toString(); 
+                    var button      = "button" + index.toString();
                     var isEnabled   = self.config.get(button + '.enabled', false);
                     var gpioPin     = self.config.get(button + '.pin', 0);
                     var stationName = self.config.get(button + '.stationName', "");
@@ -203,7 +207,7 @@ gpioRadioButtons.prototype.saveConfig = function (data) {
 
     //console.log(JSON.stringify(data));
     for (var index = 1; index <= buttonCount; index++) {
-        var button = "button" + index.toString(); 
+        var button = "button" + index.toString();
 
         var buttonEnabled = data[button + 'Enabled'];
         self.config.set(button + '.enabled', buttonEnabled);
@@ -215,7 +219,7 @@ gpioRadioButtons.prototype.saveConfig = function (data) {
         } else {
             self.config.set(button + '.pin',         0);
             self.config.set(button + '.stationName', "");
-            self.config.set(button + '.stationUri',  "");		
+            self.config.set(button + '.stationUri',  "");
         }
     }
 
@@ -230,9 +234,10 @@ gpioRadioButtons.prototype.createTriggers = function() {
     var self = this;
 
     self.logger.info('GPIO Radio Buttons: Reading config and creating triggers...');
+    self.logger.info("DEBUG: createTriggers");
 
     for (var index = 1; index <= buttonCount; index++) {
-        var button      = "button" + index.toString(); 
+        var button      = "button" + index.toString();
         var isEnabled   = self.config.get(button + '.enabled');
         var gpioPin     = self.config.get(button + '.pin');
         var stationName = self.config.get(button + '.stationName', "");
@@ -240,38 +245,56 @@ gpioRadioButtons.prototype.createTriggers = function() {
 
         if (isEnabled === true) {
             self.logger.info('GPIO Radio Buttons: '+ button + ' on pin ' + gpioPin.toString() + ' tunes to ' + stationName + ' using uri ' + stationUri);
-            var pin = new Gpio(gpioPin, 'in', 'rising', {debounceTimeout: 250});
+            var pin = new Gpio(gpioPin, 'in', 'both');
             pin.watch(self.listener.bind(self, {stationName: stationName, stationUri: stationUri}));
             self.triggers.push(pin);
+            self.logger.info('DEBUG: createTrigger function: Pin: '+ pin);
         }
     }
-        
+
     return libQ.resolve();
 };
 
 gpioRadioButtons.prototype.clearTriggers = function() {
     var self = this;
-    
+
     self.triggers.forEach(function(trigger, index, array) {
         self.logger.info("GPIO Radio Buttons: Destroying trigger " + index);
+        self.logger.info("DEBUG: clearTriggers");
 
         trigger.unwatchAll();
-        trigger.unexport();		
+        trigger.unexport();
     });
-    
+
     self.triggers = [];
 
-    return libQ.resolve();	
+    return libQ.resolve();
 };
 
 gpioRadioButtons.prototype.listener = function(station, err, value) {
     var self = this;
-    
-    self.logger.info('GPIO Radio Buttons: Changing station to ' + station.stationName);
-    self.changeStation(station);
+    self.logger.info("DEBUG: listener");
+
+    self.logger.info("GPIO Pin value: " + value);
+    if (value === 0) {
+      self.logger.info("DEBUG: pause playback and clearQueue");
+      socket.emit('pause');
+      socket.emit('clearQueue');
+    }
+
+    if (value === 1) {
+      self.logger.info('DEBUG: GPIO Radio Buttons: Changing station to ' + station.stationName);
+      self.changeStation(station);
+    }
+
+
+
 };
 
 gpioRadioButtons.prototype.changeStation = function(station) {
+    var self = this;
+    self.logger.info("DEBUG: changeStation");
+
     var payload = {
                     "item": {
                                "title": station.stationName,
